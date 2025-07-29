@@ -185,7 +185,6 @@ const binetTheme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          background: binetColors.primary,
           boxShadow: '0px 4px 12px rgba(86, 162, 197, 0.15)',
         },
       },

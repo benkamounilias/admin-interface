@@ -21,15 +21,95 @@ class EmailService {
   }
 
   /**
-   * Envoie un email via l'API backend
+   * Test de connexion email
    */
-  async sendEmail(emailData: EmailData): Promise<EmailResponse> {
+  async testEmailConnection(): Promise<EmailResponse> {
     try {
       const token = localStorage.getItem(APP_CONFIG.AUTH_TOKEN_KEY);
       
       if (!token) {
         throw new Error('Token d\'authentification manquant');
       }
+
+      const response = await fetch(`${this.baseURL}/api/email/test`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erreur HTTP: ${response.status}`);
+      }
+
+      const message = await response.text();
+      return {
+        success: true,
+        message: message
+      };
+    } catch (error: any) {
+      console.error('Erreur lors du test email:', error);
+      return {
+        success: false,
+        message: error.message || 'Erreur lors du test email'
+      };
+    }
+  }
+
+  /**
+   * Envoie un email simple
+   */
+  async sendSimpleEmail(to: string, subject: string, message: string): Promise<EmailResponse> {
+    try {
+      const token = localStorage.getItem(APP_CONFIG.AUTH_TOKEN_KEY);
+      
+      if (!token) {
+        throw new Error('Token d\'authentification manquant');
+      }
+
+      const response = await fetch(`${this.baseURL}/api/email/send-simple`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          to,
+          subject,
+          message
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erreur HTTP ${response.status}: ${errorText}`);
+      }
+
+      const responseMessage = await response.text();
+      return {
+        success: true,
+        message: responseMessage
+      };
+    } catch (error: any) {
+      console.error('Erreur lors de l\'envoi de l\'email:', error);
+      return {
+        success: false,
+        message: error.message || 'Erreur lors de l\'envoi de l\'email'
+      };
+    }
+  }
+  async sendEmail(emailData: EmailData): Promise<EmailResponse> {
+    try {
+      const token = localStorage.getItem(APP_CONFIG.AUTH_TOKEN_KEY);
+      
+      if (!token) {
+        console.error('❌ Token d\'authentification manquant');
+        throw new Error('Token d\'authentification manquant');
+      }
+
+      console.log('📧 Tentative d\'envoi email vers:', emailData.to[0]);
+      console.log('📧 Sujet:', emailData.subject);
+      console.log('📧 URL:', `${this.baseURL}/api/email/send-simple`);
 
       // Utiliser l'endpoint backend existant
       const response = await fetch(`${this.baseURL}/api/email/send-simple`, {
@@ -45,20 +125,45 @@ class EmailService {
         })
       });
 
+      console.log('📧 Statut de réponse:', response.status);
+
       if (!response.ok) {
         // Si l'endpoint n'existe pas encore
         if (response.status === 404) {
+          console.error('❌ Endpoint email non configuré sur le backend');
           return {
             success: false,
             message: 'Service email non configuré sur le backend. Consultez EMAIL_BACKEND_SETUP.md pour l\'implémentation.'
           };
         }
         
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Erreur HTTP: ${response.status} - ${response.statusText}`);
+        let errorText = '';
+        try {
+          errorText = await response.text();
+          console.error('❌ Erreur réponse backend:', errorText);
+        } catch (e) {
+          console.error('❌ Impossible de lire la réponse d\'erreur');
+        }
+        
+        throw new Error(`Erreur HTTP ${response.status}: ${errorText || response.statusText}`);
       }
 
-      const result = await response.json();
+      let result;
+      try {
+        const responseText = await response.text();
+        console.log('✅ Réponse backend:', responseText);
+        
+        // Essayer de parser comme JSON, sinon utiliser comme message texte
+        try {
+          result = JSON.parse(responseText);
+        } catch (e) {
+          result = { message: responseText };
+        }
+      } catch (e) {
+        console.error('❌ Erreur lecture réponse:', e);
+        result = { message: 'Email envoyé avec succès' };
+      }
+
       return {
         success: true,
         message: result.message || 'Email envoyé avec succès',
@@ -66,7 +171,7 @@ class EmailService {
       };
 
     } catch (error: any) {
-      console.error('Erreur lors de l\'envoi d\'email:', error);
+      console.error('❌ Erreur lors de l\'envoi d\'email:', error);
       
       // Messages d'erreur plus informatifs
       let errorMessage = error.message;
@@ -91,14 +196,18 @@ class EmailService {
   /**
    * Envoie des emails en lot (un par un pour être compatible avec le backend)
    */
-  async sendBulkEmails(emailData: EmailData, batchSize: number = 10): Promise<EmailResponse> {
+  async sendBulkEmails(emailData: EmailData): Promise<EmailResponse> {
     const { to, subject, content } = emailData;
     const failedRecipients: string[] = [];
+    const failureReasons: string[] = [];
     let successCount = 0;
+
+    console.log('📧 Début envoi en lot vers', to.length, 'destinataires');
 
     try {
       // Envoyer un email à chaque destinataire individuellement
       for (const recipient of to) {
+        console.log(`📧 Envoi vers: ${recipient}`);
         try {
           const result = await this.sendEmail({
             to: [recipient],
@@ -108,12 +217,16 @@ class EmailService {
 
           if (result.success) {
             successCount++;
+            console.log(`✅ Succès pour: ${recipient}`);
           } else {
             failedRecipients.push(recipient);
+            failureReasons.push(`${recipient}: ${result.message}`);
+            console.log(`❌ Échec pour: ${recipient} - ${result.message}`);
           }
-        } catch (error) {
-          console.error(`Erreur pour ${recipient}:`, error);
+        } catch (error: any) {
+          console.error(`❌ Erreur pour ${recipient}:`, error);
           failedRecipients.push(recipient);
+          failureReasons.push(`${recipient}: ${error.message}`);
         }
 
         // Petite pause entre les envois pour éviter de surcharger le serveur
@@ -123,15 +236,25 @@ class EmailService {
       const totalRecipients = to.length;
       const failedCount = failedRecipients.length;
 
+      // Journalisation détaillée des échecs
+      if (failedCount > 0) {
+        console.error('❌ Échecs d\'envoi détaillés:', failureReasons);
+      }
+
+      const resultMessage = failedCount === 0 
+        ? `Tous les emails ont été envoyés avec succès (${successCount}/${totalRecipients})`
+        : `${successCount}/${totalRecipients} emails envoyés. ${failedCount} échecs.`;
+
+      console.log('📊 Résultat final:', resultMessage);
+
       return {
         success: failedCount < totalRecipients,
-        message: failedCount === 0 
-          ? `Tous les emails ont été envoyés avec succès (${successCount}/${totalRecipients})`
-          : `${successCount}/${totalRecipients} emails envoyés. ${failedCount} échecs.`,
+        message: resultMessage,
         failedRecipients
       };
 
     } catch (error: any) {
+      console.error('❌ Erreur globale lors de l\'envoi des emails en lot:', error);
       return {
         success: false,
         message: error.message || 'Erreur lors de l\'envoi des emails en lot'
@@ -252,7 +375,51 @@ class EmailService {
     }
     return chunks;
   }
+
+  /**
+   * Fonction de test rapide pour le debugging
+   */
+  async testQuickEmail(to: string = 'test@example.com'): Promise<EmailResponse> {
+    console.log('🧪 Test rapide d\'envoi email vers:', to);
+    
+    return await this.sendEmail({
+      to: [to],
+      subject: 'Test Email - ' + new Date().toISOString(),
+      content: 'Ceci est un email de test envoyé depuis l\'interface d\'administration.'
+    });
+  }
 }
 
 // Instance singleton du service email
 export const emailService = new EmailService();
+
+// Fonctions de debug globales pour la console
+(window as any).testEmail = async (to: string = 'test@example.com') => {
+  console.log('🧪 Test email depuis console...');
+  const result = await emailService.testQuickEmail(to);
+  console.log('📧 Résultat:', result);
+  return result;
+};
+
+(window as any).testEmailConnection = async () => {
+  console.log('🔗 Test connexion email...');
+  const result = await emailService.testEmailConnection();
+  console.log('📧 Connexion:', result);
+  return result;
+};
+
+(window as any).checkAuth = () => {
+  const token = localStorage.getItem(APP_CONFIG.AUTH_TOKEN_KEY);
+  const user = localStorage.getItem(APP_CONFIG.AUTH_USER_KEY);
+  console.log('🔐 Token présent:', !!token);
+  console.log('👤 Utilisateur:', user);
+  if (token) {
+    console.log('🎫 Token (10 premiers caractères):', token.substring(0, 10) + '...');
+  }
+  return { hasToken: !!token, user };
+};
+
+console.log('📧 Fonctions de debug email disponibles:');
+console.log('- testEmail("votre@email.com") : tester l\'envoi d\'un email');
+console.log('- testEmailConnection() : tester la connexion au service email');
+console.log('- checkAuth() : vérifier l\'authentification');

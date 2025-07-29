@@ -1,7 +1,7 @@
 // Configuration pour l'application front
 export const APP_CONFIG = {
-  MODE: 'mock' as 'mock' | 'real', // ✅ MODE MOCK - Pas de backend requis
-  API_BASE_URL: 'http://localhost:8080', // URL du backend (non utilisée en mode mock)
+  MODE: 'real' as 'mock' | 'real', // ✅ MODE REAL - Backend configuré et opérationnel
+  API_BASE_URL: 'http://localhost:8080', // URL du backend
   APP_PORT: 3001,
   AUTH_TOKEN_KEY: 'binet_admin_token',
   AUTH_USER_KEY: 'binet_admin_user',

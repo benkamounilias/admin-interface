@@ -46,7 +46,7 @@ export interface UpdateUserRequest {
 
 class UserCRUDService {
   private getAuthHeaders() {
-    const token = localStorage.getItem('binet_admin_token');
+    const token = localStorage.getItem(APP_CONFIG.AUTH_TOKEN_KEY);
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
@@ -66,6 +66,12 @@ class UserCRUDService {
 
   async getAllUsers(): Promise<User[]> {
     try {
+      const token = localStorage.getItem(APP_CONFIG.AUTH_TOKEN_KEY);
+      if (!token || token.length < 10) {
+        console.error('❌ Aucun token JWT valide trouvé dans localStorage sous la clé:', APP_CONFIG.AUTH_TOKEN_KEY);
+        throw new Error('Token JWT manquant ou invalide. Veuillez vous reconnecter.');
+      }
+      console.log('🔑 Token JWT utilisé pour /users:', token);
       const response = await axios.get(
         `${APP_CONFIG.API_BASE_URL}/users`,
         {

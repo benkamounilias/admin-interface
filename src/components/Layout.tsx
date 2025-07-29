@@ -138,6 +138,7 @@ const Layout: React.FC = () => {
           width: { md: sidebarOpen ? `calc(100% - ${drawerWidth}px)` : '100%' },
           ml: { md: sidebarOpen ? `${drawerWidth}px` : '0px' },
           transition: 'width 0.3s, margin 0.3s',
+          backgroundColor: '#393a3aff',
         }}
       >
         <Toolbar>
